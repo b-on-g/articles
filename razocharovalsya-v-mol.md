@@ -4,7 +4,7 @@
 
 > Это как `nextjs`: что-то дефолтное собрать легко. Делаешь шаг в сторону, и чёт в коленке дырка появляется, ходить неудобно.
 
-> ```tree
+> ```javascript
 > $my_details $mol_view
 > 	sub /
 > 		<= Pager $mol_paginator
@@ -97,7 +97,7 @@ $mol_mem($my_details.prototype, 'Pager')
 
 Все его методы переопределяются:
 
-```tree
+```javascript
 $my_app $mol_div
 	divs /
 		<= Details $my_details
@@ -121,7 +121,7 @@ $my_app $mol_div
 **Владелец настраивает вложенный компонент.** Это архитектурно встроенная композиция, обычный способ собирать интерфейс в `$mol`:
 плюс в том, что не нужно специально выделять и выносить компонент, если не хочется или "так правильно"
 
-```tree
+```javascript
 $bog_fragile_outer_page $mol_view
 	sub /
 		<= Weather $bog_fragile_outer_widget
@@ -175,7 +175,7 @@ type $bog_fragile_outer_widget__city_bog_fragile_outer_page_1 = $mol_type_enforc
 
 Тут смешались две вещи. `^` без имени это просто вызов родителя, `super`:
 
-```tree
+```javascript
 $bog_fragile_spread_keep $bog_fragile_spread_base
 	sub /
 		^
@@ -208,7 +208,7 @@ sub(){
 
 Мы думали сделать, чтобы отличалось, например можно новые свойства добавлять через `<= title`
 
-```tree
+```javascript
 $my_card $mol_view
 	sub /
 		<= Title $mol_view
@@ -217,7 +217,7 @@ $my_card $mol_view
 
 Здесь `<= title \Карточка` заводит в `$my_card` новое свойство `title`. А тут ниже только переопределение:
 
-```tree
+```javascript
 $my_card_news $my_card
 	title \Новости
 ```
@@ -236,7 +236,7 @@ $my_card_news $my_card
 
 [Плагин](https://github.com/hyoo-ru/mam_mol/tree/master/plugin) это компонент без своего DOM-элемента, он работает на элементе владельца, как директива в Angular. Так подключаются горячие клавиши, жесты, навигация стрелками. Вот кусок `$mol_search`:
 
-```tree
+```javascript
 $mol_search $mol_pop
 	plugins /$mol_plugin
 		^

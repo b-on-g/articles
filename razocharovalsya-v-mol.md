@@ -187,7 +187,7 @@ type $bog_fragile_outer_widget__city_bog_fragile_outer_page_1 = $mol_type_enforc
 
 ![Случай outer: v1 рендерит Питер, v2 не собирается](https://raw.githubusercontent.com/b-on-g/fragile/main/article/fragile-outer.png)
 
-Двадцать мест с привязками дадут двадцать ошибок компиляции, а не тихий развал. Если бы `city` поменял тип, а не имя, упало бы так же.
+Двадцать привязок дадут двадцать ошибок компиляции, а не тихий развал. Если бы `city` поменял тип, а не имя, упало бы так же.
 
 ## 4. Версий нет, патч прилетает пушем
 

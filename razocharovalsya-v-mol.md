@@ -240,9 +240,9 @@ FQN. Импортов нет, сборщик сам строит граф зав
 
 Есть поддержка в VS Code: в корне `MAM` лежит папка `.vscode`, и при открытии склонированного `mam` VS Code сам предлагает поставить рекомендованные расширения из `.vscode/extensions.json`, там же сниппеты.
 
-В документации про это отдельная страница [Инструменты](https://b-on-g.github.io/smalljs/#!mol_locale=ru/section=docs/page=tooling), разделы Zed и VS Code. На неё в том же чате, кстати, и ссылались, когда ругали формат ссылок)
+В документации про это отдельная страница [Инструменты](https://b-on-g.github.io/smalljs/#!mol_locale=ru/section=docs/page=tooling), разделы Zed и VS Code. 
 
-![Раздел доки про Zed и VS Code](https://raw.githubusercontent.com/b-on-g/fragile/main/article/docs-ide.png)
+![Раздел красивой доки про Zed и VS Code](https://raw.githubusercontent.com/b-on-g/fragile/main/article/docs-ide.png)
 
 ## 8. `^`, алиасинг и одноимённое свойство родителя
 

@@ -343,4 +343,4 @@ static void reap( void ) {
 
 ---
 
-_[TODO: строка про свой тг-канал]_
+_Пишу про реактивность, $mol и свой язык в_ [_тг-канале @Dev_cmuser_](https://t.me/Dev_cmuser)

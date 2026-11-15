@@ -40,35 +40,49 @@
 На `wire` остаток читает заказы, как формула ячейку:
 
 ```typescript
-object $bog_wire_salt {
+object $bog_wire_salt_orders {
 
 	solid ids( next?: list text ) {
 		return next ?? []
 	}
 
-	solid qty( id: text, next?: int ) {
+	solid order( id: text, next?: int ) {
 		return next ?? 0
 	}
+
+	sum(): int {
+		return ids.map( order ).sum
+	}
+
+	action add( id: text, count: int ) {
+		ids( [ ...ids, id ] )
+		order( id, count )
+	}
+
+}
+
+object $bog_wire_salt_balance {
+
+	orders: $bog_wire_salt_orders
 
 	total(): int {
 		return 10
 	}
 
-	ordered(): int {
-		return ids.map( qty ).sum
-	}
-
 	free(): int {
-		return total - ordered
+		return total - orders.sum
 	}
 
-	action order( id: text, count: int ) {
-		ids( [ ...ids, id ] )
-		qty( id, count )
+}
+
+object $bog_wire_salt {
+
+	solid orders() {
+		return $bog_wire_salt_orders()
 	}
 
-	action cancel( id: text ) {
-		qty( id, 0 )
+	solid balance() {
+		return $bog_wire_salt_balance()
 	}
 
 }
@@ -80,22 +94,33 @@ object $bog_wire_salt_app {
 	}
 
 	action main() {
-		salt.order( "o1", 3 )
-		salt.order( "o2", 2 )
-		print( "свободно {salt.free}" ) \\ свободно 5
-		salt.order( "o3", 4 )
-		print( "свободно {salt.free}" ) \\ свободно 1
-		salt.cancel( "o1" )
-		print( "свободно {salt.free}" ) \\ свободно 4
+		salt.orders.add( "o1", 3 )
+		salt.orders.add( "o2", 2 )
+		print( "свободно {salt.balance.free}" )
+		salt.orders.order( "o2", 5 )
+		print( "свободно {salt.balance.free}" )
+		salt.orders.order( "o1", 0 )
+		print( "свободно {salt.balance.free}" )
 	}
 
 }
 ```
 
-Нативная программа на wire начинается с `action main()` 
-Два заказа записались, первый `print` читает `free`, тот читает `ordered`, тот читает заказы, и всё считается в этот момент: 10 минус 3 минус 2. Потом пришёл третий заказ, и следующий `print` получил уже пересчитанное значение. Никто никому ничего не отправлял, ни событий, ни дублей.
+```
+свободно 5
+свободно 2
+свободно 5
+```
 
-Отменили заказ, и соль вернулась на склад сама, без «компенсации\САГИ» и прочей ерунды. Если заказы и склад в разных сервисах, синхронизировать их всё равно придётся. Только синкать можно сами заказы, а не события про них.
+Нативная программа на wire начинается с `action main()`.
+
+`order( id, next? )` это канал, как в моле: один метод и для чтения, и для записи. `order( "o2" )` читает заказ. Если его ещё не писали, метод вернёт то, что написано в теле, здесь 0. Что вернуть при первом чтении, решает реализация: значение по умолчанию, сброс или загрузку откуда-то. `order( "o2", 5 )` записывает новое значение, и все, кто его читал, пересчитаются при следующем обращении.
+
+Остаток заказов у себя не создаёт. `orders` у него только объявлен, а `$bog_wire_salt_balance()` создаётся без всяких стрелок: компилятор видит, что у владельца есть `orders`, и передаёт его сам. В тесте можно объявить свои `orders`, и остаток возьмёт их.
+
+Первый `print` читает `free`, тот читает `orders.sum`, тот читает заказы, и всё считается в этот момент: 10 минус 3 минус 2. Потом заказ `o2` перезаписали на 5, и следующий `print` получил уже пересчитанное значение. Никто никому ничего не отправлял, ни событий, ни дублей.
+
+Отменили заказ записью `order( "o1", 0 )`, и соль вернулась на склад сама, без «компенсации\САГИ» и прочей ерунды. Если заказы и склад в разных сервисах, синхронизировать их всё равно придётся. Только синкать можно сами заказы, а не события про них.
 
 Пример целиком лежит в [репозитории](https://github.com/b-on-g/wire/tree/main/salt), вместе с тестами.
 
@@ -114,15 +139,16 @@ object $bog_wire_salt_app {
 Компилятор на TS, генерирует C и собирает его `zig cc`. Каждый метод становится обычной функцией, вся реактивность сидит в `wire_read`. Вот `free` из примера с солью:
 
 ```c
-static void F_bog_wire_salt__free( wire_obj* self, const wire_val* keys, const wire_val* next, wire_val* out ) {
-	wire_val t53 = wire_read( self, &M_bog_wire_salt__total, NULL, NULL );
-	wire_val t54 = wire_read( self, &M_bog_wire_salt__ordered, NULL, NULL );
-	wire_val t52 = { .i = t53.i - t54.i };
-	*out = t52;
+static void F_bog_wire_salt_balance__free( wire_obj* self, const wire_val* keys, const wire_val* next, wire_val* out ) {
+	wire_val t77 = wire_read( self, &M_bog_wire_salt_balance__total, NULL, NULL );
+	wire_val t79 = wire_read( self, &M_bog_wire_salt_balance__orders, NULL, NULL );
+	wire_val t80 = wire_read( t79.obj, &M_bog_wire_salt_orders__sum, NULL, NULL );
+	wire_val t76 = { .i = t77.i - t80.i };
+	*out = t76;
 }
 ```
 
-Это `free(): int { return total - ordered }`. Так можно писать и руками на C против `rt/rt.h`, язык нужен только чтобы компилятор не дал завести таймер мимо графа)
+Это `free(): int { return total - orders.sum }`. Так можно писать и руками на C против `rt/rt.h`, язык нужен только чтобы компилятор не дал завести таймер мимо графа)
 
 Весь «сборщик мусора» рантайма:
 

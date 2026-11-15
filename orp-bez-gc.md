@@ -37,35 +37,10 @@
 
 А зачем всё это? Например, складу нужно знать сколько соли свободно. Это просто «было минус заказали». В Excel это одна формула со ссылкой на ячейку с заказами. На бэке вместо ссылки цепочка из таблиц, воркеров и Кафки, только чтобы склад узнал, что заказы не поменялись. Ещё и следят чтобы одно событие не пришло дважды а то два раза спишется.
 
-На `wire` склад читает заказы как формула ячейку. Откуда у склада заказы? У него `orders` только объявлен. Заказы передаёт тот кто создаёт склад, стрелкой `<=` как в view.tree. Здесь это `$bog_wire_salt`.
+На `wire` остаток читает заказы, как формула ячейку:
 
 ```typescript
-
 object $bog_wire_salt {
-
-	orders() {
-		return $bog_wire_salt_orders()
-	}
-
-	warehouse() {
-		return $bog_wire_salt_warehouse {
-			orders <= orders
-		}
-	}
-
-	action main() {
-		orders.place( "o1", 3 )
-		orders.place( "o2", 2 )
-		print( "свободно {warehouse.free}" )
-		orders.place( "o2", 2 )
-		print( "свободно {warehouse.free}" )
-		orders.cancel( "o1" )
-		print( "свободно {warehouse.free}" )
-	}
-
-}
-
-object $bog_wire_salt_orders {
 
 	solid ids( next?: list text ) {
 		return next ?? []
@@ -75,8 +50,20 @@ object $bog_wire_salt_orders {
 		return next ?? 0
 	}
 
-	action place( id: text, count: int ) {
-		qty( id ) == 0 ? ids( [ ...ids, id ] ) : none
+	total(): int {
+		return 10
+	}
+
+	ordered(): int {
+		return ids.map( qty ).sum
+	}
+
+	free(): int {
+		return total - ordered
+	}
+
+	action order( id: text, count: int ) {
+		ids( [ ...ids, id ] )
 		qty( id, count )
 	}
 
@@ -86,42 +73,37 @@ object $bog_wire_salt_orders {
 
 }
 
-object $bog_wire_salt_warehouse {
+object $bog_wire_salt_app {
 
-	orders: $bog_wire_salt_orders
-
-	solid total( next?: int ) {
-		return next ?? 10
+	solid salt() {
+		return $bog_wire_salt()
 	}
 
-	ordered() {
-		return orders.ids.map( orders.qty ).sum
-	}
-
-	free() {
-		return total - ordered
+	action main() {
+		salt.order( "o1", 3 )
+		salt.order( "o2", 2 )
+		print( "свободно {salt.free}" ) \\ свободно 5
+		salt.order( "o3", 4 )
+		print( "свободно {salt.free}" ) \\ свободно 1
+		salt.cancel( "o1" )
+		print( "свободно {salt.free}" ) \\ свободно 4
 	}
 
 }
-
 ```
 
-Программа начинается с `main`. Два заказа записались, первый `print` читает `warehouse.free`, тот читает заказы, и всё считается в этот момент: 10 минус 3 минус 2. Тот же заказ `o2` пришёл второй раз и просто перезаписал своё количество. Отменили `o1` и следующий `print` получил уже пересчитанное значение. Никто никому ничего не отправлял.
-
-```
-свободно 5
-свободно 5
-свободно 8
-```
-
-Забудешь передать и программа не соберётся: `Property orders is not bound`. Заказы поменялись и `free` пересчитался сам. Событий нет, значит нет и дублей. Повторный заказ просто перезаписывается по id.
+Нативная программа на wire начинается с `action main()` 
+Два заказа записались, первый `print` читает `free`, тот читает `ordered`, тот читает заказы, и всё считается в этот момент: 10 минус 3 минус 2. Потом пришёл третий заказ, и следующий `print` получил уже пересчитанное значение. Никто никому ничего не отправлял, ни событий, ни дублей.
 
 Отменили заказ, и соль вернулась на склад сама, без «компенсации\САГИ» и прочей ерунды. Если заказы и склад в разных сервисах, синхронизировать их всё равно придётся. Только синкать можно сами заказы, а не события про них.
+
+Пример целиком лежит в [репозитории](https://github.com/b-on-g/wire/tree/main/salt), вместе с тестами.
 
 ### Первый реактивный ЯП без GC --- wire
 
 Реализация реактивности взята из [$mol_wire](https://habr.com/ru/articles/673138/), но там TS всё таки, не возможно полнностью на реактивный граф перейти.
 Поэтому я сделал [wire](https://github.com/b-on-g/wire), там мимо графа ничего не положить:
+
 - переменных нет, лямбд нет, в `map`, `find`, `upsert` передаются именованные методы;
 - состояние это параметр `next?`, писать в него можно только из `action`;
 - тела мемо чистые, это проверяет компилятор;
@@ -129,18 +111,18 @@ object $bog_wire_salt_warehouse {
 
 Ссылка на объект может лежать только в значении метода, значит граф видит каждую. Объект принадлежит первому атому, который его вернул, и умирает вместе с ним. Значения неизменяемые и считаются счётчиком ссылок, цикл из неизменяемых значений не собрать, так что он не течёт.
 
-Компилятор на TS, генерирует C и собирает его `zig cc`. Каждый метод становится обычной функцией, вся реактивность сидит в `wire_read`. Вот `free` со склада:
+Компилятор на TS, генерирует C и собирает его `zig cc`. Каждый метод становится обычной функцией, вся реактивность сидит в `wire_read`. Вот `free` из примера с солью:
 
 ```c
-static void F_bog_wire_salt_warehouse__free( wire_obj* self, const wire_val* keys, const wire_val* next, wire_val* out ) {
-	wire_val t79 = wire_read( self, &M_bog_wire_salt_warehouse__total, NULL, NULL );
-	wire_val t80 = wire_read( self, &M_bog_wire_salt_warehouse__ordered, NULL, NULL );
-	wire_val t78 = { .i = t79.i - t80.i };
-	*out = t78;
+static void F_bog_wire_salt__free( wire_obj* self, const wire_val* keys, const wire_val* next, wire_val* out ) {
+	wire_val t53 = wire_read( self, &M_bog_wire_salt__total, NULL, NULL );
+	wire_val t54 = wire_read( self, &M_bog_wire_salt__ordered, NULL, NULL );
+	wire_val t52 = { .i = t53.i - t54.i };
+	*out = t52;
 }
 ```
 
-Это `free` со склада, `total - ordered`. Так можно писать и руками на C против `rt/rt.h`, язык нужен только чтобы компилятор не дал завести таймер мимо графа)
+Это `free(): int { return total - ordered }`. Так можно писать и руками на C против `rt/rt.h`, язык нужен только чтобы компилятор не дал завести таймер мимо графа)
 
 Весь «сборщик мусора» рантайма:
 

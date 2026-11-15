@@ -40,17 +40,48 @@
 На `wire` склад читает заказы как формула ячейку. Откуда у склада заказы? У него `orders` только объявлен. Заказы передаёт тот кто создаёт склад, стрелкой `<=` как в view.tree. Здесь это `$bog_wire_salt`.
 
 ```typescript
-type $bog_wire_salt_order {
-	id: text
-	qty: int
-}
 
 object $bog_wire_salt {
 
-	orders = $bog_wire_salt_orders()
+	orders() {
+		return $bog_wire_salt_orders()
+	}
 
-	warehouse = $bog_wire_salt_warehouse {
-		orders <= orders
+	warehouse() {
+		return $bog_wire_salt_warehouse {
+			orders <= orders
+		}
+	}
+
+	action main() {
+		orders.place( "o1", 3 )
+		orders.place( "o2", 2 )
+		print( "свободно {warehouse.free}" )
+		orders.place( "o2", 2 )
+		print( "свободно {warehouse.free}" )
+		orders.cancel( "o1" )
+		print( "свободно {warehouse.free}" )
+	}
+
+}
+
+object $bog_wire_salt_orders {
+
+	solid ids( next?: list text ) {
+		return next ?? []
+	}
+
+	solid qty( id: text, next?: int ) {
+		return next ?? 0
+	}
+
+	action place( id: text, count: int ) {
+		qty( id ) == 0 ? ids( [ ...ids, id ] ) : none
+		qty( id, count )
+	}
+
+	action cancel( id: text ) {
+		qty( id, 0 )
 	}
 
 }
@@ -59,39 +90,33 @@ object $bog_wire_salt_warehouse {
 
 	orders: $bog_wire_salt_orders
 
-	solid total( next?: int ) = next ?? 10
-
-	qty_of( order: $bog_wire_salt_order ) = order.qty
-
-	ordered = orders.all.map( qty_of ).sum
-
-	free = total - ordered
-
-}
-
-object $bog_wire_salt_orders {
-
-	solid all( next?: list $bog_wire_salt_order ) = next ?? [
-		$bog_wire_salt_order{ id: "o1", qty: 3 },
-		$bog_wire_salt_order{ id: "o2", qty: 2 }
-	]
-
-	id_of( order: $bog_wire_salt_order ) = order.id
-
-	action place( id: text, qty: int ) {
-		all( all.upsert( id_of, id, $bog_wire_salt_order{ id, qty } ) )
+	solid total( next?: int ) {
+		return next ?? 10
 	}
 
-	action cancel( id: text ) {
-		all( all.drop( id_of, id ) )
+	ordered() {
+		return orders.ids.map( orders.qty ).sum
+	}
+
+	free() {
+		return total - ordered
 	}
 
 }
+
+```
+
+Программа начинается с `main`. Два заказа записались, первый `print` читает `warehouse.free`, тот читает заказы, и всё считается в этот момент: 10 минус 3 минус 2. Тот же заказ `o2` пришёл второй раз и просто перезаписал своё количество. Отменили `o1` и следующий `print` получил уже пересчитанное значение. Никто никому ничего не отправлял.
+
+```
+свободно 5
+свободно 5
+свободно 8
 ```
 
 Забудешь передать и программа не соберётся: `Property orders is not bound`. Заказы поменялись и `free` пересчитался сам. Событий нет, значит нет и дублей. Повторный заказ просто перезаписывается по id.
 
-Отменили заказ, и соль вернулась на склад сама, без «компенсации\САГИ» и прочей ерунды. Если заказы и склад на разных серверах, возить данные между ними всё равно придётся, только возить можно сами заказы, а не события про них.
+Отменили заказ, и соль вернулась на склад сама, без «компенсации\САГИ» и прочей ерунды. Если заказы и склад в разных сервисах, синхронизировать их всё равно придётся. Только синкать можно сами заказы, а не события про них.
 
 ### Первый реактивный ЯП без GC --- wire
 
@@ -108,14 +133,14 @@ object $bog_wire_salt_orders {
 
 ```c
 static void F_bog_wire_salt_warehouse__free( wire_obj* self, const wire_val* keys, const wire_val* next, wire_val* out ) {
-	wire_val t19 = wire_read( self, &M_bog_wire_salt_warehouse__total, NULL, NULL );
-	wire_val t20 = wire_read( self, &M_bog_wire_salt_warehouse__ordered, NULL, NULL );
-	wire_val t18 = { .i = t19.i - t20.i };
-	*out = t18;
+	wire_val t79 = wire_read( self, &M_bog_wire_salt_warehouse__total, NULL, NULL );
+	wire_val t80 = wire_read( self, &M_bog_wire_salt_warehouse__ordered, NULL, NULL );
+	wire_val t78 = { .i = t79.i - t80.i };
+	*out = t78;
 }
 ```
 
-Это `free = total - ordered`. Так можно писать и руками на C против `rt/rt.h`, язык нужен только чтобы компилятор не дал завести таймер мимо графа)
+Это `free` со склада, `total - ordered`. Так можно писать и руками на C против `rt/rt.h`, язык нужен только чтобы компилятор не дал завести таймер мимо графа)
 
 Весь «сборщик мусора» рантайма:
 
